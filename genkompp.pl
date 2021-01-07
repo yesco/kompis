@@ -52,6 +52,7 @@ int pTOOBIG(char* name, long v) {
 
 long parseLong(char* name, char* typ) {
     long v = 4711;    
+    // TODO: what to do at error?
     pBEGIN(name, typ);
     printf(\"%ll\", v);
     pEND(name);
@@ -97,15 +98,48 @@ int pHOLLERITH(char* name) {
     pERROR(name);
 }
 
+typedef int(char*) pFuncType;
+
+int pARRAY(pFuncTYpe fun, char* name) {
+    long n = parseLong(name, \"ArrayLength\");
+    for(long i=0; i<n; i++) {
+       if (!fun(name))
+         return pERROR(\"ARRAY\");
+    }
+    return 1;
+}
+
+int pRESPONSE(char* name) {
+    if (pCHAR('%')) {
+       // loop till fail or newline
+       while(!pCHAR('\n') && pSTEP());
+
+       return 0;
+    } else if (pCHAR('=')) {
+      long no = parseLong(name, 'ReqNo');
+      return 1;
+    } else {
+      return pERROR(name);
+    }
+}
+
 ////////////////////
 // Below: generated parsers for various types
 ";
+
+my $name, $req;
 
 while(<IN>) {
     next if /^\s*$/;
     chop();
     if (/^---TYPE (\S+)/) {
-	my $name = $1;
+	$name = $1;
+    }
+    if (/^---REQ (\d+) (\S+)/) {
+	$req = 0 + $1;
+	$name = "Q_$2";
+    }
+    if ($name) {
 	$name =~ s/\-/_/g;
 	my $typ = <IN>;
 	chop($typ);
@@ -121,15 +155,35 @@ while(<IN>) {
 		chop();
 		#print ">$_<";
 		last if /^\s*$/;
-		if (/^(\S+)\s+:\s+(\S+)$/) {
+		if (/->/) {
+		    print "    pRESPONSE() &&\n";
+		} elsif (/^(\S+)\s+:\s+(.*)\s*$/) {
 		    my $field = $1;
 		    my $t = $2;
-		    $t =~ s/\-/_/g;
+		    $field =~ s/\-/_/g;
+    		    $t =~ s/\-/_/g;
+		    $t =~ s/ //g;
 		
-		    print "    p$t(\"$field\") &&\n";
-		} elsif (/^(\S+)/) {
+		    # sameXXXcode
+		    if ($t =~ s/^ARRAY//) {
+			print "    pARRAY(&p$t, \"$field\") &&\n";
+		    } else {
+			print "    p$t(\"$field\") &&\n";
+		    }
+			
+		} elsif (/^(ARRAY \S+|\S+)\s*$/) {
 		    # there should only be one? type aliases?
-		    print "    p$1(\"$name\") &&\n";
+		    my $field = $1;
+		    $field =~ s/\-/_/g;
+		    $field =~ s/ //g;
+
+		    # sameXXXcode
+		    if ($t =~ s/^ARRAY//) {
+			print "    pARRAY(&p$t, \"$field\") &&\n";
+		    } else {
+			print "    p$t(\"$field\") &&\n";
+		    }
+			
 		} else {
 		    print "\n%% Error in $name: $_\n";
 		}
@@ -147,19 +201,12 @@ while(<IN>) {
 	    print "%%Unknown type: $typ\n";
 	}
 	
-	print "  pENDname)\n";
+	print "  pEND(name)\n";
 	print "  || pERROR(name);\n";
 	print "}\n\n";
 	    
-	next;
-    }
-
-    if (/^---REQ (\S+)/) {
-	while (<IN>) {
-	    last if /^\s*$/;
-	    chop();
-	}
-
+	$name = undef;
+	$req = undef;
 	next;
     }
 
